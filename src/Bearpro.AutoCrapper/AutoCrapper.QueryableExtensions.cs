@@ -1,9 +1,11 @@
-namespace Bearpro.AutoCrapper.QueryableExtensions;
-
-public static class QueryableExtensions
+namespace Bearpro.AutoCrapper.QueryableExtensions
 {
-    public static IQueryable<TDst> ProjectTo<TDst>(this IQueryable source, ConfigurationProvider configuration)
+
+    public static class QueryableExtensions
     {
-        throw new NotImplementedException();
+        public static IQueryable<TDst> ProjectTo<TDst>(this IQueryable source, ConfigurationProvider configuration)
+        {
+            throw new NotImplementedException();
+        }
     }
 }
