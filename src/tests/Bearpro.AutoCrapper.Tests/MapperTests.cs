@@ -3,12 +3,17 @@
 #pragma warning disable CS8625 // Cannot convert null literal to non-nullable reference type.
 #pragma warning disable CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider adding the 'required' modifier or declaring as nullable.
 
+using Bearpro.AutoCrapper;
+/* It is necessary check for AutoMapper compatibility, so do not forget to 
+ * comment line above and uncomment line below and make sure your test
+ * succeed in both cases. */
+// using AutoMapper;
 
-namespace Bearpro.AutoCrapper.Tests
+namespace Tests
 {
     public class MapperTests
     {
-        // 1. Basic property mapping: source.Id => dest.Id, source.Name => dest.Name
+        // 1. Basic property mapping with profile: source.Id => dest.Id, source.Name => dest.Name
         [Fact]
         public void Should_Map_Simple_Properties()
         {
@@ -22,11 +27,46 @@ namespace Bearpro.AutoCrapper.Tests
             var src = new Source { Id = 1, Name = "Alice" };
 
             // Act
-            var dest = mapper.Map<Destination>(src);
+            var dest = mapper.Map<DestinationMatchingSource>(src);
 
             // Assert
-            dest.Identifier.Should().Be(1);
-            dest.FullName.Should().Be("Alice");
+            dest.Id.Should().Be(1);
+            dest.Name.Should().Be("Alice");
+        }
+
+        // 1.1. Basic property mapping without profile should fail.
+        [Fact]
+        public void Should_Not_Map_Simple_Properties_Without_Profile()
+        {
+            // Arrange
+            var mapper = new Mapper(new MapperConfiguration(_ => { }));
+
+            var src = new Source { Id = 1, Name = "Alice" };
+
+            // Act
+            Assert.ThrowsAny<Exception>(() => { mapper.Map<Destination>(src); });
+        }
+
+        // 1.2. Basic collection mapping
+        [Fact]
+        public void Should_Map_Simple_Properties_InCollections()
+        {
+            // Arrange
+            var config = new MapperConfiguration(opts =>
+            {
+                opts.AddProfile<SimpleProfile>();
+            });
+            var mapper = config.CreateMapper();
+
+            List<Source> src = [new() { Id = 1, Name = "Alice" }];
+
+            // Act
+            var dest = mapper.Map<List<DestinationMatchingSource>>(src);
+
+            // Assert
+            dest.Should().HaveCount(1);
+            dest[0].Id.Should().Be(1);
+            dest[0].Name.Should().Be("Alice");
         }
 
         // 2. Reverse mapping
@@ -167,10 +207,10 @@ namespace Bearpro.AutoCrapper.Tests
             });
             var mapper = config.CreateMapper();
 
-            var src = new Source { Name = "abc" };
-            var result = mapper.Map<string>(src);
+            var src = EnumA.A1;
+            var result = mapper.Map<EnumB>(src);
 
-            result.Should().Be("<<abc>>");
+            result.Should().Be(EnumB.B1);
         }
 
         // 10. ForAllOtherMembers.Ignore()
@@ -184,7 +224,7 @@ namespace Bearpro.AutoCrapper.Tests
             var mapper = config.CreateMapper();
 
             var src = new Source { Id = 1, Name = "A", Extra = "Z" };
-            var dest = mapper.Map<DestinationFull>(src);
+            var dest = mapper.Map<DestinationMatchingSource>(src);
 
             dest.Id.Should().Be(1);
             dest.Name.Should().Be("A");
@@ -193,7 +233,7 @@ namespace Bearpro.AutoCrapper.Tests
 
         // 11. Collection mapping & AllowNullCollections
         [Fact]
-        public void Should_Map_Collections_And_Preserve_Null_By_Default()
+        public void Should_Map_Collections_And_Replace_Null_With_Empty_By_Default()
         {
             var config = new MapperConfiguration(opts =>
             {
@@ -207,11 +247,11 @@ namespace Bearpro.AutoCrapper.Tests
 
             var srcNull = new SourceWithList { Items = null };
             var dest2 = mapper.Map<DestinationWithList>(srcNull);
-            dest2.Items.Should().BeNull();  // default behavior
+            dest2.Items.Should().BeEmpty();  // default behavior
         }
 
         [Fact]
-        public void Should_Not_Preserve_Null_Collections_When_AllowNullCollections_True()
+        public void Should_Preserve_Null_Collections_When_AllowNullCollections_True()
         {
             var config = new MapperConfiguration(opts =>
             {
@@ -222,8 +262,7 @@ namespace Bearpro.AutoCrapper.Tests
 
             var srcNull = new SourceWithList { Items = null };
             var dest = mapper.Map<DestinationWithList>(srcNull);
-            dest.Items.Should().NotBeNull();
-            dest.Items.Should().BeEmpty();
+            dest.Items.Should().BeNull();
         }
 
         // 12. ForPath (nested)
@@ -263,7 +302,7 @@ namespace Bearpro.AutoCrapper.Tests
         public bool AfterCalled { get; set; }
     }
 
-    public class DestinationFull
+    public class DestinationMatchingSource
     {
         public int Id { get; set; }
         public string Name { get; set; }
@@ -271,7 +310,10 @@ namespace Bearpro.AutoCrapper.Tests
     }
 
     // converter target
-    public class SpecialDestination : Destination { public bool WasConstructed { get; set; } = true; }
+    public class SpecialDestination : Destination
+    {
+        public bool WasConstructed { get; set; } = true;
+    }
 
     // collection
     public class SourceWithList { public string[] Items { get; set; } }
@@ -281,13 +323,16 @@ namespace Bearpro.AutoCrapper.Tests
     public class ParentDestination { public ChildDest Child { get; set; } }
     public class ChildDest { public string Name { get; set; } }
 
+    public enum EnumA { A1, A2, A3 }
+    public enum EnumB { None, B1, B2, B3 }
+
     // Now: Profiles that wire up the mapping expressions in exactly the ways the tests expect.
 
     public class SimpleProfile : Profile
     {
         public SimpleProfile()
         {
-            CreateMap<Source, Destination>();
+            CreateMap<Source, DestinationMatchingSource>();
         }
     }
 
@@ -295,7 +340,9 @@ namespace Bearpro.AutoCrapper.Tests
     {
         public ReverseProfile()
         {
-            CreateMap<A, B>().ReverseMap();
+            CreateMap<A, B>()
+                .ForMember(dest => dest.ValueB, opt => opt.MapFrom(src => src.ValueA))
+                .ReverseMap();
         }
     }
 
@@ -346,7 +393,8 @@ namespace Bearpro.AutoCrapper.Tests
         public ConstructProfile()
         {
             CreateMap<Source, Destination>()
-                .ConstructUsing(src => new SpecialDestination());
+                .ConstructUsing(src => new SpecialDestination())
+                .ForMember(d => d.Identifier, opt => opt.MapFrom(s => s.Id));
         }
     }
 
@@ -355,6 +403,7 @@ namespace Bearpro.AutoCrapper.Tests
         public AfterMapProfile()
         {
             CreateMap<Source, Destination>()
+                .ForMember(d => d.FullName, opt => opt.MapFrom(s => s.Name))
                 .AfterMap((s, d) => d.AfterCalled = true);
         }
     }
@@ -363,21 +412,29 @@ namespace Bearpro.AutoCrapper.Tests
     {
         public ConvertUsingProfile()
         {
-            CreateMap<Source, string>()
-                .ConvertUsing<SurroundConverter>();
+            CreateMap<EnumA, EnumB>()
+                .ConvertUsing<EnumConverter>();
         }
     }
-    public class SurroundConverter : ITypeConverter<Source, string>
+    public class EnumConverter : ITypeConverter<EnumA, EnumB>
     {
-        public string Convert(Source source, string dest, ResolutionContext ctx)
-            => $"<<{source.Name}>>";
+        public EnumB Convert(EnumA source, EnumB destination, ResolutionContext context)
+        {
+            switch (source)
+            {
+                case EnumA.A1: return EnumB.B1;
+                case EnumA.A2: return EnumB.B2;
+                case EnumA.A3: return EnumB.B3;
+                default: throw new ArgumentOutOfRangeException(nameof(source), source, null);
+            }
+        }
     }
 
     public class AllOthersProfile : Profile
     {
         public AllOthersProfile()
         {
-            CreateMap<Source, DestinationFull>()
+            CreateMap<Source, DestinationMatchingSource>()
                 .ForMember(d => d.Id, opt => opt.MapFrom(s => s.Id))
                 .ForMember(d => d.Name, opt => opt.MapFrom(s => s.Name))
                 .ForAllOtherMembers(opt => opt.Ignore());

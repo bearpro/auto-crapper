@@ -25,7 +25,8 @@ implementing simple reflection based runtime mapping without any precompilation,
 efficient. Do not overthink library that can be completely replaced by simple
 `static B Map(A)`.
 
-- Before adding new feature write corresponding test.
+- Before adding new feature write corresponding test. If you chainging tests,
+  make shure they matches original AutoMapper 10.1.1 behaviour.
 
 - Try not to use modern language features. The origin of this project comes from
   attempt to speed up .Net 4.6.1 ASP.Net application startup, that 
