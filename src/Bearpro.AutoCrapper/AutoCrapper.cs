@@ -21,6 +21,7 @@ namespace Bearpro.AutoCrapper
         public Func<object, bool>? Condition;
         public bool Ignore;
         public bool UseDestinationValue;
+        public Func<object, object?>? CustomResolver;
 
         public PropertyMap Reverse()
         {
@@ -138,7 +139,25 @@ namespace Bearpro.AutoCrapper
     {
         private readonly PropertyMap _map;
         internal DestinationMemberOptions(PropertyMap map) { _map = map; }
-        public void MapFrom<TSrcMember>(Expression<Func<TSrc, TSrcMember>> valueSelector) => _map.SourcePath = ExpressionHelper.GetPath(valueSelector);
+        public void MapFrom<TSrcMember>(Expression<Func<TSrc, TSrcMember>> valueSelector)
+        {
+            try
+            {
+                var path = ExpressionHelper.GetPath(valueSelector);
+                if (path.Count > 0)
+                {
+                    _map.SourcePath = path;
+                    return;
+                }
+            }
+            catch (InvalidOperationException)
+            {
+                // fall back to compiled expression
+            }
+
+            var func = valueSelector.Compile();
+            _map.CustomResolver = s => func((TSrc)s);
+        }
         public void Condition(Func<TSrc, bool> condition) => _map.Condition = s => condition((TSrc)s);
         public void UseDestinationValue() => _map.UseDestinationValue = true;
         public void Ignore() => _map.Ignore = true;
@@ -399,7 +418,9 @@ namespace Bearpro.AutoCrapper
                 if (pm.Ignore) continue;
                 if (pm.UseDestinationValue && existing != null) continue;
                 if (pm.Condition != null && !pm.Condition(source)) continue;
-                object? value = GetValueFromPath(source, pm.SourcePath);
+                object? value = pm.CustomResolver != null
+                    ? pm.CustomResolver(source)
+                    : GetValueFromPath(source, pm.SourcePath);
                 SetValueToPath(dest, pm.DestinationPath, value, map.Profile.AllowNullCollections);
             }
             map.AfterMap?.Invoke(source, dest);
