@@ -30,13 +30,12 @@ efficient. Do not overthink library that can be completely replaced by simple
   was originally dependent on AutoMapper 10.1.1.
 
 - To run tests:
-  ```
-  cd src
-  dotnet test
+  ```bash
+  dotnet test src/auto-crapper.sln
   ```
 
 - Before adding new feature write corresponding test. If you chainging tests,
   make shure they matches original AutoMapper 10.1.1 behaviour.
-  ```
-  dotnet test '-p:DefineConstants=AUTOMAPPER'
+  ```bash
+  dotnet test src/auto-crapper.sln '-p:DefineConstants=AUTOMAPPER'
   ```
