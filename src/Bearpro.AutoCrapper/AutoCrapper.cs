@@ -56,7 +56,7 @@ namespace Bearpro.AutoCrapper
                 body = u.Operand;
             while (body is MemberExpression m)
             {
-                if (m.Member is PropertyInfo or FieldInfo)
+                if (m.Member is PropertyInfo || m.Member is FieldInfo)
                 {
                     members.Insert(0, m.Member);
                     body = m.Expression;
@@ -82,6 +82,44 @@ namespace Bearpro.AutoCrapper
         public static bool IsEnumerableType(Type t)
         {
             return typeof(IEnumerable).IsAssignableFrom(t) && t != typeof(string);
+        }
+    }
+
+    static class MemberHelpers
+    {
+        internal static Type GetMemberType(MemberInfo member)
+        {
+            return member switch
+            {
+                PropertyInfo pi => pi.PropertyType,
+                FieldInfo fi => fi.FieldType,
+                _ => throw new InvalidOperationException()
+            };
+        }
+
+        internal static object? GetMemberValue(MemberInfo member, object obj)
+        {
+            return member switch
+            {
+                PropertyInfo pi => pi.GetValue(obj),
+                FieldInfo fi => fi.GetValue(obj),
+                _ => throw new InvalidOperationException()
+            };
+        }
+
+        internal static void SetMemberValue(MemberInfo member, object obj, object? value)
+        {
+            switch (member)
+            {
+                case PropertyInfo pi:
+                    pi.SetValue(obj, value);
+                    break;
+                case FieldInfo fi:
+                    fi.SetValue(obj, value);
+                    break;
+                default:
+                    throw new InvalidOperationException();
+            }
         }
     }
 
@@ -267,8 +305,8 @@ namespace Bearpro.AutoCrapper
                 if (sp == null)
                     continue;
 
-                var dstType = GetMemberType(prop);
-                var srcType = GetMemberType(sp);
+                var dstType = MemberHelpers.GetMemberType(prop);
+                var srcType = MemberHelpers.GetMemberType(sp);
 
                 if (dstType.IsAssignableFrom(srcType))
                 {
@@ -366,48 +404,13 @@ namespace Bearpro.AutoCrapper
             return dest;
         }
 
-        private static Type GetMemberType(MemberInfo member)
-        {
-            return member switch
-            {
-                PropertyInfo pi => pi.PropertyType,
-                FieldInfo fi => fi.FieldType,
-                _ => throw new InvalidOperationException()
-            };
-        }
-
-        private static object? GetMemberValue(MemberInfo member, object obj)
-        {
-            return member switch
-            {
-                PropertyInfo pi => pi.GetValue(obj),
-                FieldInfo fi => fi.GetValue(obj),
-                _ => throw new InvalidOperationException()
-            };
-        }
-
-        private static void SetMemberValue(MemberInfo member, object obj, object? value)
-        {
-            switch (member)
-            {
-                case PropertyInfo pi:
-                    pi.SetValue(obj, value);
-                    break;
-                case FieldInfo fi:
-                    fi.SetValue(obj, value);
-                    break;
-                default:
-                    throw new InvalidOperationException();
-            }
-        }
-
         private static object? GetValueFromPath(object obj, List<MemberInfo> path)
         {
             object? current = obj;
             foreach (var p in path)
             {
                 if (current == null) return null;
-                current = GetMemberValue(p, current);
+                current = MemberHelpers.GetMemberValue(p, current);
             }
             return current;
         }
@@ -418,12 +421,12 @@ namespace Bearpro.AutoCrapper
             for (int i = 0; i < path.Count - 1; i++)
             {
                 var p = path[i];
-                var next = GetMemberValue(p, current);
+                var next = MemberHelpers.GetMemberValue(p, current);
                 if (next == null)
                 {
-                    var t = GetMemberType(p);
+                    var t = MemberHelpers.GetMemberType(p);
                     next = Activator.CreateInstance(t)!;
-                    SetMemberValue(p, current, next);
+                    MemberHelpers.SetMemberValue(p, current, next);
                 }
                 current = next;
             }
@@ -431,28 +434,28 @@ namespace Bearpro.AutoCrapper
 
             if (value == null)
             {
-                var lastType = GetMemberType(last);
+                var lastType = MemberHelpers.GetMemberType(last);
                 if (typeof(IEnumerable).IsAssignableFrom(lastType) && lastType != typeof(string))
                 {
                     if (allowNullCollections)
                     {
-                        SetMemberValue(last, current, null);
+                        MemberHelpers.SetMemberValue(last, current, null);
                     }
                     else
                     {
                         var elem = TypeHelpers.GetElementType(lastType);
                         if (lastType.IsArray)
-                            SetMemberValue(last, current, Array.CreateInstance(elem, 0));
+                            MemberHelpers.SetMemberValue(last, current, Array.CreateInstance(elem, 0));
                         else
-                            SetMemberValue(last, current, Activator.CreateInstance(typeof(List<>).MakeGenericType(elem)));
+                            MemberHelpers.SetMemberValue(last, current, Activator.CreateInstance(typeof(List<>).MakeGenericType(elem)));
                     }
                     return;
                 }
-                SetMemberValue(last, current, null);
+                MemberHelpers.SetMemberValue(last, current, null);
                 return;
             }
 
-            var lastPropType = GetMemberType(last);
+            var lastPropType = MemberHelpers.GetMemberType(last);
             if (typeof(IEnumerable).IsAssignableFrom(lastPropType) && lastPropType != typeof(string) && value is IEnumerable srcEnum && !(value is string))
             {
                 var elemType = TypeHelpers.GetElementType(lastPropType);
@@ -465,15 +468,15 @@ namespace Bearpro.AutoCrapper
                 {
                     var arr = Array.CreateInstance(elemType, list.Count);
                     list.CopyTo(arr, 0);
-                    SetMemberValue(last, current, arr);
+                    MemberHelpers.SetMemberValue(last, current, arr);
                 }
                 else
                 {
-                    SetMemberValue(last, current, list);
+                    MemberHelpers.SetMemberValue(last, current, list);
                 }
                 return;
             }
-            SetMemberValue(last, current, value);
+            MemberHelpers.SetMemberValue(last, current, value);
         }
     }
 }
