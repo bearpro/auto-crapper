@@ -3,11 +3,17 @@
 #pragma warning disable CS8625 // Cannot convert null literal to non-nullable reference type.
 #pragma warning disable CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider adding the 'required' modifier or declaring as nullable.
 
+// It is necessary check for AutoMapper compatibility, so do not forget to 
+// run your tests both with AutoMapper and AutoCrapper every time you change
+// any tests:
+// - dotnet test '-p:DefineConstants=AUTOMAPPER' # to run with AutoMapper
+// - dotnet test                                 # to run with AutoCrapper
+
+#if AUTOMAPPER
+using AutoMapper;
+#else
 using Bearpro.AutoCrapper;
-/* It is necessary check for AutoMapper compatibility, so do not forget to 
- * comment line above and uncomment line below and make sure your test
- * succeed in both cases. */
-// using AutoMapper;
+#endif
 
 namespace Tests
 {
