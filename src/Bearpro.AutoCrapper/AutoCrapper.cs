@@ -16,8 +16,8 @@ namespace Bearpro.AutoCrapper
 
     class PropertyMap
     {
-        public List<PropertyInfo> SourcePath = new();
-        public List<PropertyInfo> DestinationPath = new();
+        public List<PropertyInfo> SourcePath = new List<PropertyInfo>();
+        public List<PropertyInfo> DestinationPath = new List<PropertyInfo>();
         public Func<object, bool>? Condition;
         public bool Ignore;
         public bool UseDestinationValue;
@@ -39,7 +39,7 @@ namespace Bearpro.AutoCrapper
         public Type SrcType = null!;
         public Type DstType = null!;
         public Func<object, object>? Constructor;
-        public List<PropertyMap> PropertyMaps = new();
+        public List<PropertyMap> PropertyMaps = new List<PropertyMap>();
         public bool IgnoreUnmapped;
         public Action<object, object>? AfterMap;
         public object? Converter;
@@ -183,7 +183,7 @@ namespace Bearpro.AutoCrapper
 
     public class Profile
     {
-        internal List<MapConfig> Maps = new();
+        internal List<MapConfig> Maps = new List<MapConfig>();
         public bool AllowNullCollections { get; set; } = false;
 
         protected IMappingExpression<TSrc, TDst> CreateMap<TSrc, TDst>()
@@ -219,7 +219,7 @@ namespace Bearpro.AutoCrapper
     {
         public class MapperConfigurationOptions
         {
-            internal List<Profile> Profiles = new();
+            internal List<Profile> Profiles = new List<Profile>();
             public void AddProfile(Profile profile) => Profiles.Add(profile);
             public void AddProfiles(IEnumerable<Profile> profiles) => Profiles.AddRange(profiles);
             public void AddProfile<TProfile>() where TProfile : Profile, new() => Profiles.Add(new TProfile());
@@ -239,7 +239,7 @@ namespace Bearpro.AutoCrapper
 
     public class ConfigurationProvider
     {
-        internal readonly Dictionary<(Type, Type), MapConfig> Maps = new();
+        internal readonly Dictionary<(Type, Type), MapConfig> Maps = new Dictionary<(Type, Type), MapConfig>();
 
         public ConfigurationProvider(IEnumerable<Profile> profiles)
         {
