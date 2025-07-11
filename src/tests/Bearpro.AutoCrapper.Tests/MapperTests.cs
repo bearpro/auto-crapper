@@ -338,6 +338,45 @@ namespace Tests
             dest.id.Should().Be(1);
             dest.name.Should().Be("FieldName");
         }
+
+        // Complex mapping
+        [Fact]
+        public void Should_Map_FootballTeam_To_FootballTeamDto()
+        {
+            var config = new MapperConfiguration(opts =>
+            {
+                // HACK We need to run Automapper 10.1.1 tests in modern runtime,
+                // so by this we preventing bug between old AutoMapper and 
+                // generic math
+                #if AUTOMAPPER
+                opts.ShouldMapMethod = _ => false;
+                #endif
+
+                opts.AddProfile<FootballTeamProfile>();
+            });
+            var mapper = config.CreateMapper();
+
+            var team = new FootballTeam
+            {
+                CoachId = 10,
+                SponsorId = 20,
+                Players = new List<PlayerEntity>
+                {
+                    new PlayerEntity { PlayerRoleTypeId = 1, AccountId = 100 },
+                    new PlayerEntity { PlayerRoleTypeId = 2, AccountId = 200 }
+                }
+            };
+
+            var dto = mapper.Map<FootballTeamDto>(team);
+
+            dto.Coach.Should().Be(10);
+            dto.Sponsor.Should().Be(20);
+            dto.Players.Should().HaveCount(2);
+            dto.Players[0].Role.TypeId.Should().Be(1);
+            dto.Players[0].Account.Id.Should().Be(100);
+            dto.Players[1].Role.TypeId.Should().Be(2);
+            dto.Players[1].Account.Id.Should().Be(200);
+        }
     }
 
     // === SUPPORTING TYPES & PROFILES FOR THE TESTS ===
@@ -539,6 +578,69 @@ namespace Tests
             CreateMap<SourceWithFields, DestinationWithFields>();
             CreateMap<SourceWithFields, DestinationMatchingSource>();
             CreateMap<Source, DestinationWithFields>();
+        }
+    }
+
+    // Complex mapping data
+
+    public class FootballTeam
+    {
+        public List<PlayerEntity> Players { get; set; }
+        public int CoachId { get; set; }
+        public int SponsorId { get; set; }
+    }
+
+    public class FootballTeamDto
+    {
+        public List<Player> Players { get; set; }
+        public int Coach { get; set; }
+        public int Sponsor { get; set; }
+    }
+
+    public class PlayerEntity
+    {
+        public int PlayerRoleTypeId { get; set; }
+        public int AccountId { get; set; }
+    }
+
+    public class Player
+    {
+        public PlayerRole Role { get; set; }
+        public PlayerAccount Account { get; set; }
+    }
+
+    public class PlayerRole
+    {
+        public int TypeId { get; set; }
+    }
+
+    public class PlayerAccount
+    {
+        public int Id { get; set; }
+    }
+
+    public class FootballTeamProfile : Profile
+    {
+        public FootballTeamProfile()
+        {
+            CreateMap<FootballTeam, FootballTeamDto>()
+                .ForMember(
+                    x => x.Players,
+                    x => x.MapFrom(
+                        y => y.Players.Select(z => new Player
+                        {
+                            Role = new PlayerRole
+                            {
+                                TypeId = z.PlayerRoleTypeId,
+                            },
+                            Account = new PlayerAccount
+                            {
+                                Id = z.AccountId
+                            }
+                        })))
+                .ForMember(x => x.Coach, x => x.MapFrom(y => y.CoachId))
+                .ForMember(x => x.Sponsor, x => x.MapFrom(y => y.SponsorId))
+                .ReverseMap();
         }
     }
 }
