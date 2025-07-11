@@ -16,8 +16,8 @@ namespace Bearpro.AutoCrapper
 
     class PropertyMap
     {
-        public List<PropertyInfo> SourcePath = new List<PropertyInfo>();
-        public List<PropertyInfo> DestinationPath = new List<PropertyInfo>();
+        public List<MemberInfo> SourcePath = new List<MemberInfo>();
+        public List<MemberInfo> DestinationPath = new List<MemberInfo>();
         public Func<object, bool>? Condition;
         public bool Ignore;
         public bool UseDestinationValue;
@@ -26,8 +26,8 @@ namespace Bearpro.AutoCrapper
         {
             return new PropertyMap
             {
-                SourcePath = new List<PropertyInfo>(DestinationPath),
-                DestinationPath = new List<PropertyInfo>(SourcePath),
+                SourcePath = new List<MemberInfo>(DestinationPath),
+                DestinationPath = new List<MemberInfo>(SourcePath),
                 Ignore = this.Ignore,
                 UseDestinationValue = this.UseDestinationValue
             };
@@ -48,22 +48,22 @@ namespace Bearpro.AutoCrapper
 
     static class ExpressionHelper
     {
-        public static List<PropertyInfo> GetPath(LambdaExpression expr)
+        public static List<MemberInfo> GetPath(LambdaExpression expr)
         {
-            var members = new List<PropertyInfo>();
+            var members = new List<MemberInfo>();
             Expression? body = expr.Body;
             if (body is UnaryExpression u && u.NodeType == ExpressionType.Convert)
                 body = u.Operand;
             while (body is MemberExpression m)
             {
-                if (m.Member is PropertyInfo pi)
+                if (m.Member is PropertyInfo or FieldInfo)
                 {
-                    members.Insert(0, pi);
+                    members.Insert(0, m.Member);
                     body = m.Expression;
                 }
                 else
                 {
-                    throw new InvalidOperationException("Only property access is supported");
+                    throw new InvalidOperationException("Only field or property access is supported");
                 }
             }
             return members;
@@ -126,7 +126,7 @@ namespace Bearpro.AutoCrapper
             if (map.SourcePath.Count == 0)
             {
                 var last = map.DestinationPath.Last();
-                var sp = typeof(TSrc).GetProperty(last.Name);
+                var sp = (MemberInfo?)typeof(TSrc).GetProperty(last.Name) ?? typeof(TSrc).GetField(last.Name);
                 if (sp != null) map.SourcePath.Add(sp);
             }
             _config.PropertyMaps.Add(map);
@@ -256,36 +256,40 @@ namespace Bearpro.AutoCrapper
 
         private void Seal(MapConfig map)
         {
-            foreach (var prop in map.DstType.GetProperties().Where(x => x.CanWrite))
+            foreach (var prop in map.DstType.GetProperties().Where(x => x.CanWrite).Cast<MemberInfo>()
+                .Concat(map.DstType.GetFields().Where(f => !f.IsInitOnly)))
             {
                 if (map.PropertyMaps.Any(pm => pm.DestinationPath.Last() == prop))
                     continue;
                 if (map.IgnoreUnmapped)
                     continue;
-                var sp = map.SrcType.GetProperty(prop.Name);
-                if (sp == null || !sp.CanRead)
+                MemberInfo? sp = map.SrcType.GetProperty(prop.Name) as MemberInfo ?? map.SrcType.GetField(prop.Name);
+                if (sp == null)
                     continue;
 
-                if (prop.PropertyType.IsAssignableFrom(sp.PropertyType))
+                var dstType = GetMemberType(prop);
+                var srcType = GetMemberType(sp);
+
+                if (dstType.IsAssignableFrom(srcType))
                 {
                     map.PropertyMaps.Add(new PropertyMap
                     {
-                        DestinationPath = new List<PropertyInfo> { prop },
-                        SourcePath = new List<PropertyInfo> { sp }
+                        DestinationPath = new List<MemberInfo> { prop },
+                        SourcePath = new List<MemberInfo> { sp }
                     });
                     continue;
                 }
 
-                if (TypeHelpers.IsEnumerableType(prop.PropertyType) && TypeHelpers.IsEnumerableType(sp.PropertyType))
+                if (TypeHelpers.IsEnumerableType(dstType) && TypeHelpers.IsEnumerableType(srcType))
                 {
-                    var dstElem = TypeHelpers.GetElementType(prop.PropertyType);
-                    var srcElem = TypeHelpers.GetElementType(sp.PropertyType);
+                    var dstElem = TypeHelpers.GetElementType(dstType);
+                    var srcElem = TypeHelpers.GetElementType(srcType);
                     if (dstElem.IsAssignableFrom(srcElem))
                     {
                         map.PropertyMaps.Add(new PropertyMap
                         {
-                            DestinationPath = new List<PropertyInfo> { prop },
-                            SourcePath = new List<PropertyInfo> { sp }
+                            DestinationPath = new List<MemberInfo> { prop },
+                            SourcePath = new List<MemberInfo> { sp }
                         });
                     }
                 }
@@ -362,28 +366,64 @@ namespace Bearpro.AutoCrapper
             return dest;
         }
 
-        private static object? GetValueFromPath(object obj, List<PropertyInfo> path)
+        private static Type GetMemberType(MemberInfo member)
+        {
+            return member switch
+            {
+                PropertyInfo pi => pi.PropertyType,
+                FieldInfo fi => fi.FieldType,
+                _ => throw new InvalidOperationException()
+            };
+        }
+
+        private static object? GetMemberValue(MemberInfo member, object obj)
+        {
+            return member switch
+            {
+                PropertyInfo pi => pi.GetValue(obj),
+                FieldInfo fi => fi.GetValue(obj),
+                _ => throw new InvalidOperationException()
+            };
+        }
+
+        private static void SetMemberValue(MemberInfo member, object obj, object? value)
+        {
+            switch (member)
+            {
+                case PropertyInfo pi:
+                    pi.SetValue(obj, value);
+                    break;
+                case FieldInfo fi:
+                    fi.SetValue(obj, value);
+                    break;
+                default:
+                    throw new InvalidOperationException();
+            }
+        }
+
+        private static object? GetValueFromPath(object obj, List<MemberInfo> path)
         {
             object? current = obj;
             foreach (var p in path)
             {
                 if (current == null) return null;
-                current = p.GetValue(current);
+                current = GetMemberValue(p, current);
             }
             return current;
         }
 
-        private static void SetValueToPath(object obj, List<PropertyInfo> path, object? value, bool allowNullCollections)
+        private static void SetValueToPath(object obj, List<MemberInfo> path, object? value, bool allowNullCollections)
         {
             object current = obj;
             for (int i = 0; i < path.Count - 1; i++)
             {
                 var p = path[i];
-                var next = p.GetValue(current);
+                var next = GetMemberValue(p, current);
                 if (next == null)
                 {
-                    next = Activator.CreateInstance(p.PropertyType)!;
-                    p.SetValue(current, next);
+                    var t = GetMemberType(p);
+                    next = Activator.CreateInstance(t)!;
+                    SetMemberValue(p, current, next);
                 }
                 current = next;
             }
@@ -391,47 +431,49 @@ namespace Bearpro.AutoCrapper
 
             if (value == null)
             {
-                if (typeof(IEnumerable).IsAssignableFrom(last.PropertyType) && last.PropertyType != typeof(string))
+                var lastType = GetMemberType(last);
+                if (typeof(IEnumerable).IsAssignableFrom(lastType) && lastType != typeof(string))
                 {
                     if (allowNullCollections)
                     {
-                        last.SetValue(current, null);
+                        SetMemberValue(last, current, null);
                     }
                     else
                     {
-                        var elem = TypeHelpers.GetElementType(last.PropertyType);
-                        if (last.PropertyType.IsArray)
-                            last.SetValue(current, Array.CreateInstance(elem, 0));
+                        var elem = TypeHelpers.GetElementType(lastType);
+                        if (lastType.IsArray)
+                            SetMemberValue(last, current, Array.CreateInstance(elem, 0));
                         else
-                            last.SetValue(current, Activator.CreateInstance(typeof(List<>).MakeGenericType(elem)));
+                            SetMemberValue(last, current, Activator.CreateInstance(typeof(List<>).MakeGenericType(elem)));
                     }
                     return;
                 }
-                last.SetValue(current, null);
+                SetMemberValue(last, current, null);
                 return;
             }
 
-            if (typeof(IEnumerable).IsAssignableFrom(last.PropertyType) && last.PropertyType != typeof(string) && value is IEnumerable srcEnum && !(value is string))
+            var lastPropType = GetMemberType(last);
+            if (typeof(IEnumerable).IsAssignableFrom(lastPropType) && lastPropType != typeof(string) && value is IEnumerable srcEnum && !(value is string))
             {
-                var elemType = TypeHelpers.GetElementType(last.PropertyType);
+                var elemType = TypeHelpers.GetElementType(lastPropType);
                 IList list = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(elemType))!;
                 foreach (var item in srcEnum)
                 {
                     list.Add(item);
                 }
-                if (last.PropertyType.IsArray)
+                if (lastPropType.IsArray)
                 {
                     var arr = Array.CreateInstance(elemType, list.Count);
                     list.CopyTo(arr, 0);
-                    last.SetValue(current, arr);
+                    SetMemberValue(last, current, arr);
                 }
                 else
                 {
-                    last.SetValue(current, list);
+                    SetMemberValue(last, current, list);
                 }
                 return;
             }
-            last.SetValue(current, value);
+            SetMemberValue(last, current, value);
         }
     }
 }
