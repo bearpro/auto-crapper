@@ -164,7 +164,8 @@ namespace Bearpro.AutoCrapper
             if (map.SourcePath.Count == 0)
             {
                 var last = map.DestinationPath.Last();
-                var sp = (MemberInfo?)typeof(TSrc).GetProperty(last.Name) ?? typeof(TSrc).GetField(last.Name);
+                var sp = (MemberInfo?)typeof(TSrc).GetProperty(last.Name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.IgnoreCase)
+                    ?? typeof(TSrc).GetField(last.Name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.IgnoreCase);
                 if (sp != null) map.SourcePath.Add(sp);
             }
             _config.PropertyMaps.Add(map);
@@ -301,7 +302,8 @@ namespace Bearpro.AutoCrapper
                     continue;
                 if (map.IgnoreUnmapped)
                     continue;
-                MemberInfo? sp = map.SrcType.GetProperty(prop.Name) as MemberInfo ?? map.SrcType.GetField(prop.Name);
+                MemberInfo? sp = (MemberInfo?)map.SrcType.GetProperty(prop.Name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.IgnoreCase)
+                    ?? map.SrcType.GetField(prop.Name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.IgnoreCase);
                 if (sp == null)
                     continue;
 
