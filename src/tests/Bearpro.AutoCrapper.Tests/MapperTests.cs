@@ -287,6 +287,57 @@ namespace Tests
             dest.Child.Should().NotBeNull();
             dest.Child.Name.Should().Be("C");
         }
+
+        // 13. Field mapping
+        [Fact]
+        public void Should_Map_Fields()
+        {
+            var config = new MapperConfiguration(opts =>
+            {
+                opts.AddProfile<FieldsProfile>();
+            });
+            var mapper = config.CreateMapper();
+
+            var src = new SourceWithFields { id = 1, name = "FieldName" };
+            var dest = mapper.Map<DestinationWithFields>(src);
+
+            dest.id.Should().Be(1);
+            dest.name.Should().Be("FieldName");
+        }
+
+        // 13.1. Field mapping to properties
+        [Fact]
+        public void Should_Map_Properties_From_Fields()
+        {
+            var config = new MapperConfiguration(opts =>
+            {
+                opts.AddProfile<FieldsProfile>();
+            });
+            var mapper = config.CreateMapper();
+
+            var src = new SourceWithFields { id = 1, name = "FieldName" };
+            var dest = mapper.Map<DestinationMatchingSource>(src);
+
+            dest.Id.Should().Be(1);
+            dest.Name.Should().Be("FieldName");
+        }
+
+        // 13.2. Field mapping from properties
+        [Fact]
+        public void Should_Map_Fields_From_Properties()
+        {
+            var config = new MapperConfiguration(opts =>
+            {
+                opts.AddProfile<FieldsProfile>();
+            });
+            var mapper = config.CreateMapper();
+
+            var src = new Source { Id = 1, Name = "FieldName" };
+            var dest = mapper.Map<DestinationWithFields>(src);
+
+            dest.id.Should().Be(1);
+            dest.name.Should().Be("FieldName");
+        }
     }
 
     // === SUPPORTING TYPES & PROFILES FOR THE TESTS ===
@@ -467,4 +518,27 @@ namespace Tests
     // Dummy types for ReverseMap test
     public class A { public string ValueA { get; set; } }
     public class B { public string ValueB { get; set; } }
+
+    // Types to test field mappings
+    public class SourceWithFields
+    {
+        public int id;
+        public string name;
+    }
+
+    public class DestinationWithFields
+    {
+        public int id;
+        public string name;
+    }
+
+    public class FieldsProfile : Profile
+    {
+        public FieldsProfile()
+        {
+            CreateMap<SourceWithFields, DestinationWithFields>();
+            CreateMap<SourceWithFields, DestinationMatchingSource>();
+            CreateMap<Source, DestinationWithFields>();
+        }
+    }
 }
